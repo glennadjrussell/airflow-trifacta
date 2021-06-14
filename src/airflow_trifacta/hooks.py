@@ -1,3 +1,4 @@
+from airflow import AirflowException
 from airflow.hooks.base_hook import BaseHook
 
 import json
@@ -17,38 +18,36 @@ class TrifactaHook(BaseHook):
     Interact with Trifacta on-prem or
     """
     def __init__(self, conn_id):
-        super().__init__()
         self._conn_id = conn_id
         self._session = None
         self._base_url = None
 
-        self._conn = self.get_conn()
+        self._conn = self.get_connection(self._conn_id)
 
 
-    @staticmethod
-    def _get_headers(token: str) -> dict:
+    def _get_headers(self, token: str) -> dict:
         return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}"
         }
 
-    @staticmethod
-    def _construct_url(host: str, uri: str) -> str:
-        return f"https://{host}/{uri}"
+    def _construct_url(self, host: str, port: str, uri: str) -> str:
+        return f"http://{host}:{port}/{uri}"
 
     def _call_api(self, target, body=None, template={}):
         """
         Make API requests to Trifacta
         """
 
-        token = self._conn.extra_dejson.get('', None)
+        token = self._conn.extra_dejson.get('token', None)
+        #token = self.get_connection(self._conn_id).extra_dejson.get('token', None)
         if token:
-            auth = _get_headers(token)
+            auth = self._get_headers(token)
         else:
             raise ValueError("The connection did not contain an access token")
 
         method, uri = target
-        url = _construct_url(self._conn.host, uri.format(**template))
+        url = self._construct_url(self._conn.host, self._conn.port, uri.format(**template))
 
         functor = METHOD_MAP.get(method, None)
         if not functor:
@@ -58,18 +57,18 @@ class TrifactaHook(BaseHook):
             res = functor(
                     url,
                     json=body,
-                    headers=_get_headers(),
+                    headers=self._get_headers(token),
                     timeout=1000)
             res.raise_for_status()
             return res.json()
-        except requests_exceptions.RequestException as e:
+        except requests.exceptions.RequestException as e:
             status_code = e.response.status_code
             res_content = e.response.content
             raise AirflowException(f"Status code: {status_code}, Content {res_content}")
 
     def get_conn(self):
         if self._session is None:
-            config = self.get_connection(self._comm_id)
+            config = self.get_connection(self._conn_id)
 
             schema = config.schema or "https"
             host = config.host or "localhost"
@@ -97,7 +96,7 @@ class TrifactaHook(BaseHook):
 
         return None
 
-    def run_flow(self, flow: str, body: str):
+    def run_flow(self, flow: str):
         """
         Runs a flow, using the name of the flow as the key.
         The API requires a flow id, so we perform a lookup

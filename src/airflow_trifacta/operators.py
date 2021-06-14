@@ -1,5 +1,6 @@
 from airflow.exceptions import AirflowException
-from airflow.contrib.hooks.trifacta_hook import TrifactaHook
+#from airflow.contrib.hooks.trifacta_hook import TrifactaHook
+from .hooks import TrifactaHook
 from airflow.models import BaseOperator
 from airflow.utils.decorators import apply_defaults
 
